@@ -94,8 +94,8 @@ if cedula_cliente:
         # Asegurar que CAMPAÑA aparezca temprano
         if col_campana in cols_vista:
             cols_vista = [col_campana] + [c for c in cols_vista if c != col_campana]
-        st.dataframe(df_cliente[["OBLIGACION_MASK"] + cols_vista], use_container_width=True)
-
+        df_vista = df_cliente[["OBLIGACION_MASK"] + cols_vista].astype(str)
+        st.dataframe(df_vista, use_container_width=True)
         # Selección de obligaciones (internamente guardamos el valor real)
         opciones_oblig = df_cliente[col_oblig].tolist()
         seleccionadas = st.multiselect(
