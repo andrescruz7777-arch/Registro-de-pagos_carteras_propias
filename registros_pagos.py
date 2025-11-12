@@ -1,7 +1,6 @@
-# pagos_propias.py — versión robusta para Streamlit Cloud
-# Lee los Excel desde el repositorio raíz, valida asesor y cliente,
-# muestra obligaciones enmascaradas, limpia tipos raros, registra pagos
-# y guarda registro local (temporal) con validaciones completas.
+# pagos_propias.py — versión 100 % estable para Streamlit Cloud
+# Lee las bases desde el repositorio raíz, limpia todos los tipos
+# y evita cualquier error de PyArrow al mostrar el dataframe.
 
 import streamlit as st
 import pandas as pd
@@ -16,7 +15,7 @@ st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 # =======================================
 APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
-PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
+PATH_CONSOL = APP_DIR / "Consolidado_obligaciones_carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
@@ -48,7 +47,7 @@ except Exception as e:
     st.error(f"❌ Error al cargar las bases locales: {e}")
     st.stop()
 
-# Identificación flexible de columnas
+# Detección flexible de columnas
 col_doc_asesor = next((c for c in df_hc.columns if "DOCUMENTO" in c or c in ["CC","CÉDULA","CEDULA"]), None)
 col_nom_asesor = next((c for c in df_hc.columns if "RESPONSABLE" in c or "NOMBRE" in c), None)
 col_cc_deudor = next((c for c in df_consol.columns if "DEUDOR" in c or c in ["CEDULA","CÉDULA","DOCUMENTO"]), None)
@@ -91,21 +90,36 @@ if cedula_cliente:
         # Enmascarar obligación
         df_cliente["OBLIGACION_MASK"] = df_cliente[col_oblig].apply(enmascarar)
 
-        # Definir columnas visibles
+        # Columnas visibles
         cols_vista = [c for c in df_cliente.columns if c != col_oblig]
         if col_campana in cols_vista:
             cols_vista = [col_campana] + [c for c in cols_vista if c != col_campana]
 
-        # 🔧 Limpieza profunda antes de mostrar
+        # ==============================================================
+        # 🔍 Mostrar tabla de obligaciones con limpieza total
+        # ==============================================================
+
         df_vista = df_cliente[["OBLIGACION_MASK"] + cols_vista].copy()
-        df_vista = (
-            df_vista.map(lambda x: str(x).replace("\n", " ").replace("\r", " ").strip() if pd.notna(x) else "")
-        )
+
+        def limpiar_valor(v):
+            try:
+                if pd.isna(v):
+                    return ""
+                if isinstance(v, (list, dict, set)):
+                    return str(v)
+                v = str(v).replace("\n", " ").replace("\r", " ").strip()
+                return v
+            except Exception:
+                return str(v)
+
+        for c in df_vista.columns:
+            df_vista[c] = df_vista[c].apply(limpiar_valor)
+
         df_vista.reset_index(drop=True, inplace=True)
 
         st.subheader("Obligaciones encontradas")
         st.caption("La columna OBLIGACIÓN se muestra enmascarada (solo últimos 4). Internamente se conserva completa.")
-        st.dataframe(df_vista, use_container_width=True)
+        st._legacy_dataframe(df_vista, use_container_width=True)
 
         # Selección de obligaciones (guardamos las reales)
         opciones_oblig = df_cliente[col_oblig].tolist()
@@ -223,5 +237,6 @@ if st.button("✅ Registrar pago"):
         df_nuevo.to_csv(registro_csv, index=False)
 
     st.success(f"✅ Pago registrado correctamente para el cliente {cedula_cliente}.")
-    st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ En Streamlit Cloud el almacenamiento local es temporal. En la siguiente fase se conectará a Google Drive y Google Sheets para persistencia real.")
+    st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ En Streamlit Cloud el almacenamiento local es temporal. La siguiente fase incluirá persistencia en Google Drive y Google Sheets.")
     st.balloons()
+
