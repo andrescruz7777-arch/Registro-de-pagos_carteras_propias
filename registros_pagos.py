@@ -1,6 +1,5 @@
-# pagos_propias.py — versión 100 % estable para Streamlit Cloud
-# Lee las bases desde el repositorio raíz, limpia todos los tipos
-# y evita cualquier error de PyArrow al mostrar el dataframe.
+# pagos_propias.py — versión final para Streamlit Cloud 2025
+# Limpieza total de datos y compatibilidad plena con Streamlit moderno.
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +14,7 @@ st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 # =======================================
 APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
-PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
+PATH_CONSOL = APP_DIR / "Consolidado_obligaciones_carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
@@ -87,17 +86,11 @@ if cedula_cliente:
         st.warning("No se encontraron obligaciones para esta cédula.")
         st.stop()
     else:
-        # Enmascarar obligación
         df_cliente["OBLIGACION_MASK"] = df_cliente[col_oblig].apply(enmascarar)
 
-        # Columnas visibles
         cols_vista = [c for c in df_cliente.columns if c != col_oblig]
         if col_campana in cols_vista:
             cols_vista = [col_campana] + [c for c in cols_vista if c != col_campana]
-
-        # ==============================================================
-        # 🔍 Mostrar tabla de obligaciones con limpieza total
-        # ==============================================================
 
         df_vista = df_cliente[["OBLIGACION_MASK"] + cols_vista].copy()
 
@@ -107,8 +100,7 @@ if cedula_cliente:
                     return ""
                 if isinstance(v, (list, dict, set)):
                     return str(v)
-                v = str(v).replace("\n", " ").replace("\r", " ").strip()
-                return v
+                return str(v).replace("\n", " ").replace("\r", " ").strip()
             except Exception:
                 return str(v)
 
@@ -119,9 +111,8 @@ if cedula_cliente:
 
         st.subheader("Obligaciones encontradas")
         st.caption("La columna OBLIGACIÓN se muestra enmascarada (solo últimos 4). Internamente se conserva completa.")
-        st._legacy_dataframe(df_vista, use_container_width=True)
+        st.dataframe(df_vista.astype(str).fillna(""), use_container_width=True)
 
-        # Selección de obligaciones (guardamos las reales)
         opciones_oblig = df_cliente[col_oblig].tolist()
         seleccionadas = st.multiselect(
             "Selecciona las obligaciones a cubrir con este pago:",
@@ -237,6 +228,5 @@ if st.button("✅ Registrar pago"):
         df_nuevo.to_csv(registro_csv, index=False)
 
     st.success(f"✅ Pago registrado correctamente para el cliente {cedula_cliente}.")
-    st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ En Streamlit Cloud el almacenamiento local es temporal. La siguiente fase incluirá persistencia en Google Drive y Google Sheets.")
+    st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ En Streamlit Cloud el almacenamiento local es temporal. En la siguiente fase conectaremos Google Drive y Google Sheets para persistencia real.")
     st.balloons()
-
