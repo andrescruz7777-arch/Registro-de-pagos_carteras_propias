@@ -1,10 +1,11 @@
-# pagos_propias.py — versión final para Streamlit Cloud 2025
-# Limpieza total de datos y compatibilidad plena con Streamlit moderno.
+# pagos_propias.py — versión final con AgGrid (sin errores PyArrow)
+# Compatible con Streamlit Cloud 2025 y bases grandes
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from pathlib import Path
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.set_page_config(page_title="Registro de Pagos - Carteras Propias Bogotá", layout="centered", page_icon="💰")
 st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
@@ -14,7 +15,7 @@ st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 # =======================================
 APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
-PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
+PATH_CONSOL = APP_DIR / "Consolidado_obligaciones_carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
@@ -92,6 +93,9 @@ if cedula_cliente:
         if col_campana in cols_vista:
             cols_vista = [col_campana] + [c for c in cols_vista if c != col_campana]
 
+        # ==============================================================
+        # 🔍 Mostrar tabla de obligaciones con AgGrid (sin PyArrow)
+        # ==============================================================
         df_vista = df_cliente[["OBLIGACION_MASK"] + cols_vista].copy()
 
         def limpiar_valor(v):
@@ -107,11 +111,18 @@ if cedula_cliente:
         for c in df_vista.columns:
             df_vista[c] = df_vista[c].apply(limpiar_valor)
 
+        df_vista = df_vista.loc[:, ~df_vista.columns.duplicated()]
         df_vista.reset_index(drop=True, inplace=True)
 
         st.subheader("Obligaciones encontradas")
-        st.caption("La columna OBLIGACIÓN se muestra enmascarada (solo últimos 4). Internamente se conserva completa.")
-        st.dataframe(df_vista.astype(str).fillna(""), use_container_width=True)
+        st.caption("La columna OBLIGACIÓN se muestra enmascarada (solo últimos 4).")
+
+        gb = GridOptionsBuilder.from_dataframe(df_vista)
+        gb.configure_pagination(enabled=True)
+        gb.configure_default_column(editable=False, resizable=True, wrapText=True, autoHeight=True)
+        grid_options = gb.build()
+
+        AgGrid(df_vista, gridOptions=grid_options, height=300, theme="balham", fit_columns_on_grid_load=True)
 
         opciones_oblig = df_cliente[col_oblig].tolist()
         seleccionadas = st.multiselect(
