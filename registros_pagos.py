@@ -14,7 +14,7 @@ st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 # =======================================
 APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
-PATH_CONSOL = APP_DIR / "Consolidado_obligaciones_carteras_propias.xlsx"
+PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
