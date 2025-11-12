@@ -1,7 +1,7 @@
-# pagos_propias.py — FASE 2 (modo Streamlit Cloud con bases en el repo)
-# Valida asesor desde HC (xlsx local), busca cliente en Consolidado (xlsx local),
-# muestra obligaciones enmascaradas, selecciona, registra datos + comprobante,
-# valida duplicados y guarda CSV local (nota: en Cloud es temporal).
+# pagos_propias.py — versión robusta para Streamlit Cloud
+# Lee los Excel desde el repositorio raíz, valida asesor y cliente,
+# muestra obligaciones enmascaradas, limpia tipos raros, registra pagos
+# y guarda registro local (temporal) con validaciones completas.
 
 import streamlit as st
 import pandas as pd
@@ -16,7 +16,7 @@ st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 # =======================================
 APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
-PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
+PATH_CONSOL = APP_DIR / "Consolidado_obligaciones_carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
@@ -38,7 +38,7 @@ def enmascarar(valor: str) -> str:
     return "•" * (len(s) - 4) + s[-4:] if len(s) > 4 else s
 
 # =======================================
-# 📥 CARGA DE BASES (desde el repo)
+# 📥 CARGA DE BASES
 # =======================================
 try:
     df_hc = normaliza(leer_excel_local(PATH_HC))
@@ -48,7 +48,7 @@ except Exception as e:
     st.error(f"❌ Error al cargar las bases locales: {e}")
     st.stop()
 
-# Detección flexible de columnas
+# Identificación flexible de columnas
 col_doc_asesor = next((c for c in df_hc.columns if "DOCUMENTO" in c or c in ["CC","CÉDULA","CEDULA"]), None)
 col_nom_asesor = next((c for c in df_hc.columns if "RESPONSABLE" in c or "NOMBRE" in c), None)
 col_cc_deudor = next((c for c in df_consol.columns if "DEUDOR" in c or c in ["CEDULA","CÉDULA","DOCUMENTO"]), None)
@@ -88,15 +88,26 @@ if cedula_cliente:
         st.warning("No se encontraron obligaciones para esta cédula.")
         st.stop()
     else:
+        # Enmascarar obligación
         df_cliente["OBLIGACION_MASK"] = df_cliente[col_oblig].apply(enmascarar)
-        # Vista: mostramos todas las columnas menos la obligación real; agregamos la enmascarada
+
+        # Definir columnas visibles
         cols_vista = [c for c in df_cliente.columns if c != col_oblig]
-        # Asegurar que CAMPAÑA aparezca temprano
         if col_campana in cols_vista:
             cols_vista = [col_campana] + [c for c in cols_vista if c != col_campana]
-        df_vista = df_cliente[["OBLIGACION_MASK"] + cols_vista].astype(str)
+
+        # 🔧 Limpieza profunda antes de mostrar
+        df_vista = df_cliente[["OBLIGACION_MASK"] + cols_vista].copy()
+        df_vista = (
+            df_vista.map(lambda x: str(x).replace("\n", " ").replace("\r", " ").strip() if pd.notna(x) else "")
+        )
+        df_vista.reset_index(drop=True, inplace=True)
+
+        st.subheader("Obligaciones encontradas")
+        st.caption("La columna OBLIGACIÓN se muestra enmascarada (solo últimos 4). Internamente se conserva completa.")
         st.dataframe(df_vista, use_container_width=True)
-        # Selección de obligaciones (internamente guardamos el valor real)
+
+        # Selección de obligaciones (guardamos las reales)
         opciones_oblig = df_cliente[col_oblig].tolist()
         seleccionadas = st.multiselect(
             "Selecciona las obligaciones a cubrir con este pago:",
@@ -120,7 +131,7 @@ tipo_pago = st.selectbox("💠 Tipo de pago:", ["Pago total", "Pago a cuotas", "
 valor_pago = st.number_input("💰 Valor total del pago:", min_value=0.0, step=1000.0, format="%.0f")
 fecha_pago = st.date_input("📅 Fecha de pago:", max_value=date.today(), value=date.today())
 
-# Banco / Punto de pago desde base local
+# Banco / Punto de pago
 col_banco = next((c for c in df_bancos.columns if "BANCO" in c or "PUNTO" in c), df_bancos.columns[0])
 banco_sel = st.selectbox("🏦 Banco o punto de pago:", sorted(df_bancos[col_banco].dropna().unique()))
 
@@ -130,7 +141,7 @@ banco_sel = st.selectbox("🏦 Banco o punto de pago:", sorted(df_bancos[col_ban
 comprobante = st.file_uploader("📎 Sube el comprobante de pago (imagen o PDF)", type=["jpg","jpeg","png","pdf"])
 
 # =======================================
-# 🧮 VALIDACIONES
+# 🧮 VALIDACIONES Y REGISTRO
 # =======================================
 if st.button("✅ Registrar pago"):
     errores = []
@@ -149,7 +160,7 @@ if st.button("✅ Registrar pago"):
         st.error("⚠️ Corrige los siguientes errores:\n- " + "\n- ".join(errores))
         st.stop()
 
-    # Duplicados: (CEDULA DEUDOR + FECHA DE PAGO + N° COMPROBANTE)
+    # Validación de duplicados
     registro_csv = APP_DIR / "registro_pagos.csv"
     if registro_csv.exists():
         df_reg = pd.read_csv(registro_csv, dtype=str).fillna("")
@@ -168,14 +179,14 @@ if st.button("✅ Registrar pago"):
     ext = Path(comprobante.name).suffix
     nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana}_{fecha_ts}{ext}"
 
-    # Guardado local (nota: en Streamlit Cloud es temporal)
+    # Guardado local (temporal en Cloud)
     carpeta = APP_DIR / "pagos_registrados"
     carpeta.mkdir(exist_ok=True)
     ruta_archivo = carpeta / nombre_archivo
     with open(ruta_archivo, "wb") as f:
         f.write(comprobante.getbuffer())
 
-    # Registro
+    # Construir registro
     detalle_portafolio = "PRODUCTO ÚNICO" if len(seleccionadas) == 1 else "MULTIPRODUCTO"
     fecha_registro = datetime.now().strftime("%d/%m/%Y")
     mes_aplicacion = fecha_pago.strftime("%B").upper()
@@ -183,7 +194,7 @@ if st.button("✅ Registrar pago"):
 
     registro = {
         "FECHA": fecha_registro,
-        "DOCUMENTO": str(cedula_cliente),           # cédula del deudor
+        "DOCUMENTO": str(cedula_cliente),
         "CAMPAÑA": campana,
         "REFERENCIA": referencia,
         "N° COMPROBANTE": str(nro_comprobante),
@@ -212,5 +223,5 @@ if st.button("✅ Registrar pago"):
         df_nuevo.to_csv(registro_csv, index=False)
 
     st.success(f"✅ Pago registrado correctamente para el cliente {cedula_cliente}.")
-    st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ Nota: En Streamlit Cloud el almacenamiento local es temporal. En la siguiente fase lo enviaremos a Google Drive y guardaremos el registro en Google Sheets para persistencia.")
+    st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ En Streamlit Cloud el almacenamiento local es temporal. En la siguiente fase se conectará a Google Drive y Google Sheets para persistencia real.")
     st.balloons()
