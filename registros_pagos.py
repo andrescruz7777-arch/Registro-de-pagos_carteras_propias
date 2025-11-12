@@ -1,5 +1,5 @@
-# pagos_propias.py — versión final con AgGrid (sin errores PyArrow)
-# Compatible con Streamlit Cloud 2025 y bases grandes
+# pagos_propias.py — versión estable con AgGrid + cartera seleccionable
+# Streamlit Cloud 2025 (Python 3.10)
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 # =======================================
 APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
-PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
+PATH_CONSOL = APP_DIR / "Consolidado_obligaciones_carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
@@ -31,10 +31,6 @@ def normaliza(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [c.strip().upper().replace("\n", " ").replace("  ", " ") for c in df.columns]
     return df
-
-def enmascarar(valor: str) -> str:
-    s = str(valor or "")
-    return "•" * (len(s) - 4) + s[-4:] if len(s) > 4 else s
 
 # =======================================
 # 📥 CARGA DE BASES
@@ -87,16 +83,9 @@ if cedula_cliente:
         st.warning("No se encontraron obligaciones para esta cédula.")
         st.stop()
     else:
-        df_cliente["OBLIGACION_MASK"] = df_cliente[col_oblig].apply(enmascarar)
-
-        cols_vista = [c for c in df_cliente.columns if c != col_oblig]
-        if col_campana in cols_vista:
-            cols_vista = [col_campana] + [c for c in cols_vista if c != col_campana]
-
-        # ==============================================================
-        # 🔍 Mostrar tabla de obligaciones con AgGrid (sin PyArrow)
-        # ==============================================================
-        df_vista = df_cliente[["OBLIGACION_MASK"] + cols_vista].copy()
+        # Mostrar obligaciones completas
+        cols_vista = [col_oblig] + [c for c in df_cliente.columns if c != col_oblig]
+        df_vista = df_cliente[cols_vista].copy()
 
         def limpiar_valor(v):
             try:
@@ -115,8 +104,7 @@ if cedula_cliente:
         df_vista.reset_index(drop=True, inplace=True)
 
         st.subheader("Obligaciones encontradas")
-        st.caption("La columna OBLIGACIÓN se muestra enmascarada (solo últimos 4).")
-
+        st.caption("Ahora las obligaciones se muestran completas.")
         gb = GridOptionsBuilder.from_dataframe(df_vista)
         gb.configure_pagination(enabled=True)
         gb.configure_default_column(editable=False, resizable=True, wrapText=True, autoHeight=True)
@@ -127,13 +115,21 @@ if cedula_cliente:
         opciones_oblig = df_cliente[col_oblig].tolist()
         seleccionadas = st.multiselect(
             "Selecciona las obligaciones a cubrir con este pago:",
-            opciones_oblig,
-            format_func=lambda x: enmascarar(x)
+            opciones_oblig
         )
         if not seleccionadas:
             st.stop()
 else:
     st.stop()
+
+# =======================================
+# 🗂️ SELECCIÓN DE CARTERA / CAMPAÑA
+# =======================================
+st.markdown("---")
+st.subheader("Selección de cartera o campaña")
+
+lista_campanas = sorted(df_consol[col_campana].dropna().unique())
+campana_seleccionada = st.selectbox("🏷️ Selecciona la cartera/campaña:", lista_campanas)
 
 # =======================================
 # 💵 DATOS DEL PAGO
@@ -161,6 +157,8 @@ comprobante = st.file_uploader("📎 Sube el comprobante de pago (imagen o PDF)"
 # =======================================
 if st.button("✅ Registrar pago"):
     errores = []
+    if not campana_seleccionada:
+        errores.append("Debes seleccionar una cartera o campaña.")
     if not referencia:
         errores.append("Referencia es obligatoria.")
     if not nro_comprobante:
@@ -191,9 +189,8 @@ if st.button("✅ Registrar pago"):
 
     # Nombre archivo comprobante
     fecha_ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    campana = str(df_cliente.iloc[0][col_campana]).strip()
     ext = Path(comprobante.name).suffix
-    nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana}_{fecha_ts}{ext}"
+    nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana_seleccionada}_{fecha_ts}{ext}"
 
     # Guardado local (temporal en Cloud)
     carpeta = APP_DIR / "pagos_registrados"
@@ -211,7 +208,7 @@ if st.button("✅ Registrar pago"):
     registro = {
         "FECHA": fecha_registro,
         "DOCUMENTO": str(cedula_cliente),
-        "CAMPAÑA": campana,
+        "CAMPAÑA": campana_seleccionada,
         "REFERENCIA": referencia,
         "N° COMPROBANTE": str(nro_comprobante),
         "VALOR PAGO TOTAL": f"${valor_pago:,.0f}",
@@ -241,3 +238,4 @@ if st.button("✅ Registrar pago"):
     st.success(f"✅ Pago registrado correctamente para el cliente {cedula_cliente}.")
     st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ En Streamlit Cloud el almacenamiento local es temporal. En la siguiente fase conectaremos Google Drive y Google Sheets para persistencia real.")
     st.balloons()
+
