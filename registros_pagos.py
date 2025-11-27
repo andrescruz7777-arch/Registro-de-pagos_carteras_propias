@@ -1,8 +1,8 @@
-# registros_pagos.py — versión estable:
+# registros_pagos.py — versión estable SOLO Google Sheets
 # - Muestra obligaciones completas con AgGrid
 # - Registra pagos
 # - Guarda comprobante localmente (en el servidor)
-# - Registra fila en Google Sheets (sin usar Drive)
+# - Registra fila en Google Sheets usando requests + access token
 
 import streamlit as st
 import pandas as pd
@@ -11,7 +11,8 @@ from pathlib import Path
 from st_aggrid import AgGrid, GridOptionsBuilder
 
 from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from google.auth.transport.requests import Request as GoogleRequest
+import requests
 
 st.set_page_config(
     page_title="Registro de Pagos - Carteras Propias Bogotá",
@@ -29,7 +30,7 @@ PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
-# 🔐 GOOGLE SHEETS (solo Sheets, sin Drive)
+# 🔐 GOOGLE SHEETS
 # =======================================
 SHEET_ID = "10gjxfIR3fG7uzJQvDL2lFCKX_drCqyaxm5Xf6XEseIY"
 
@@ -37,7 +38,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-# Orden de columnas tal como está en el Sheet
 SHEET_COLUMNS = [
     "FECHA",
     "DOCUMENTO",
@@ -60,22 +60,51 @@ SHEET_COLUMNS = [
     "OBLIGACION",
     "ARCHIVO COMPROBANTE",
     "TIPO DE PAGO",
-    "LINK COMPROBANTE DRIVE",  # quedará vacío por ahora
+    "LINK COMPROBANTE DRIVE",  # lo dejamos por estructura, aunque irá vacío
 ]
 
 @st.cache_resource
-def get_sheets_service():
+def get_creds():
     """
     Carga las credenciales desde st.secrets["gcp_service_account"]
-    y construye el servicio de Google Sheets.
+    y devuelve un objeto Credentials reutilizable.
     """
     service_info = dict(st.secrets["gcp_service_account"])
     creds = service_account.Credentials.from_service_account_info(
         service_info,
         scopes=SCOPES,
     )
-    sheets_service = build("sheets", "v4", credentials=creds)
-    return sheets_service
+    return creds
+
+def append_row_to_sheet(registro: dict):
+    """
+    Envía una fila a Google Sheets usando la API HTTP directa + access token.
+    """
+    creds = get_creds()
+    if not creds.valid:
+        creds.refresh(GoogleRequest())
+
+    access_token = creds.token
+    url = (
+        f"https://sheets.googleapis.com/v4/spreadsheets/"
+        f"{SHEET_ID}/values/A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    fila = [[registro[col] for col in SHEET_COLUMNS]]
+
+    body = {"values": fila}
+
+    resp = requests.post(url, headers=headers, json=body, timeout=10)
+
+    if not (200 <= resp.status_code < 300):
+        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
+
+    return resp.json()
 
 # =======================================
 # ⚙️ FUNCIONES BASE
@@ -142,7 +171,6 @@ if cedula_cliente:
         st.warning("No se encontraron obligaciones para esta cédula.")
         st.stop()
     else:
-        # Mostrar obligaciones completas
         cols_vista = [col_oblig] + [c for c in df_cliente.columns if c != col_oblig]
         df_vista = df_cliente[cols_vista].copy()
 
@@ -255,19 +283,19 @@ if st.button("✅ Registrar pago"):
             st.warning("⚠️ Este pago ya fue registrado anteriormente (posible duplicado).")
             st.stop()
 
-    # Nombre archivo comprobante (solo como referencia & respaldo local)
+    # Nombre archivo comprobante
     fecha_ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     ext = Path(comprobante.name).suffix
     nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana_seleccionada}_{fecha_ts}{ext}"
 
-    # Guardado local (respaldo temporal en el servidor de Streamlit)
+    # Guardado local (respaldo temporal en el servidor)
     carpeta = APP_DIR / "pagos_registrados"
     carpeta.mkdir(exist_ok=True)
     ruta_archivo = carpeta / nombre_archivo
     with open(ruta_archivo, "wb") as f:
         f.write(comprobante.getbuffer())
 
-    # Construir registro base (sin signo $ para que quede numérico en Sheets)
+    # Construir registro base
     detalle_portafolio = "PRODUCTO ÚNICO" if len(seleccionadas) == 1 else "MULTIPRODUCTO"
     fecha_registro = datetime.now().strftime("%d/%m/%Y")
     mes_aplicacion = fecha_pago.strftime("%B").upper()
@@ -295,7 +323,7 @@ if st.button("✅ Registrar pago"):
         "OBLIGACION": ", ".join(map(str, seleccionadas)),
         "ARCHIVO COMPROBANTE": nombre_archivo,
         "TIPO DE PAGO": tipo_pago,
-        "LINK COMPROBANTE DRIVE": "",  # por ahora vacío
+        "LINK COMPROBANTE DRIVE": "",
     }
 
     # Guardar respaldo local en CSV
@@ -306,25 +334,14 @@ if st.button("✅ Registrar pago"):
         df_nuevo.to_csv(registro_csv, index=False)
 
     # =======================================
-    # 📤 ENVÍO A GOOGLE SHEETS (sin Drive)
+    # 📤 ENVÍO A GOOGLE SHEETS (HTTP directo)
     # =======================================
     try:
-        sheets_service = get_sheets_service()
-
-        # Fila en el mismo orden que el Sheet
-        fila = [[registro[col] for col in SHEET_COLUMNS]]
-
-        sheets_service.spreadsheets().values().append(
-            spreadsheetId=SHEET_ID,
-            range="A1",
-            valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
-            body={"values": fila},
-        ).execute()
-
+        resp_json = append_row_to_sheet(registro)
         st.success(f"✅ Pago registrado en Google Sheets para el cliente {cedula_cliente}.")
         st.info("📌 El comprobante se guardó solo como respaldo local en el servidor (no en Drive).")
-
+        # Debug opcional:
+        # st.write("🧪 Respuesta Sheets:", resp_json)
     except Exception as e:
         st.error(
             "❌ El pago se guardó en el CSV local, pero hubo un problema al escribir en Google Sheets.\n\n"
