@@ -1,4 +1,4 @@
-# pagos_propias.py — versión estable con AgGrid + cartera seleccionable
+# pagos_propias.py — versión estable con AgGrid + Google Drive + Google Sheets
 # Streamlit Cloud 2025 (Python 3.10)
 
 import streamlit as st
@@ -7,7 +7,12 @@ from datetime import datetime, date
 from pathlib import Path
 from st_aggrid import AgGrid, GridOptionsBuilder
 
-st.set_page_config(page_title="Registro de Pagos - Carteras Propias Bogotá", layout="centered", page_icon="💰")
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
+st.set_page_config(page_title="Registro de Pagos - Carteras Propias Bogotá",
+                   layout="centered", page_icon="💰")
 st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 
 # =======================================
@@ -17,6 +22,53 @@ APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
 PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
+CREDENTIALS_FILE = APP_DIR / "credenciales.json"   # <-- pon aquí tu JSON
+
+# =======================================
+# 🔐 GOOGLE DRIVE / SHEETS
+# =======================================
+DRIVE_FOLDER_ID = "1RmswnRD65UzK4mw9xm7QzKKd9T4Mq7qA"
+SHEET_ID = "10gjxfIR3fG7uzJQvDL2lFCKX_drCqyaxm5Xf6XEseIY"
+
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
+
+# Orden de columnas tal como está en el Sheet
+SHEET_COLUMNS = [
+    "FECHA",
+    "DOCUMENTO",
+    "CAMPAÑA",
+    "REFERENCIA",
+    "N° COMPROBANTE",
+    "VALOR PAGO TOTAL",
+    "VALOR PAGO POR CAMPAÑA",
+    "FECHA DE PAGO",
+    "PUNTO DE PAGO",
+    "RESPONSABLE",
+    "DETALLE PORTAFOLIO",
+    "MES DE APLICACIÓN PAGO",
+    "AÑO DE APLICACIÓN PAGO",
+    "OBSERVACIONES",
+    "CONCILIACIÓN",
+    "OBSERVACIÓN",
+    "ITEM",
+    "CONTACTO COLLECTIONS",
+    "OBLIGACION",
+    "ARCHIVO COMPROBANTE",
+    "TIPO DE PAGO",
+    "LINK COMPROBANTE DRIVE",
+]
+
+@st.cache_resource
+def get_g_services():
+    creds = service_account.Credentials.from_service_account_file(
+        str(CREDENTIALS_FILE), scopes=SCOPES
+    )
+    drive_service = build("drive", "v3", credentials=creds)
+    sheets_service = build("sheets", "v4", credentials=creds)
+    return drive_service, sheets_service
 
 # =======================================
 # ⚙️ FUNCIONES BASE
@@ -110,7 +162,8 @@ if cedula_cliente:
         gb.configure_default_column(editable=False, resizable=True, wrapText=True, autoHeight=True)
         grid_options = gb.build()
 
-        AgGrid(df_vista, gridOptions=grid_options, height=300, theme="balham", fit_columns_on_grid_load=True)
+        AgGrid(df_vista, gridOptions=grid_options, height=300,
+               theme="balham", fit_columns_on_grid_load=True)
 
         opciones_oblig = df_cliente[col_oblig].tolist()
         seleccionadas = st.multiselect(
@@ -150,7 +203,8 @@ banco_sel = st.selectbox("🏦 Banco o punto de pago:", sorted(df_bancos[col_ban
 # =======================================
 # 📎 CARGA DE COMPROBANTE
 # =======================================
-comprobante = st.file_uploader("📎 Sube el comprobante de pago (imagen o PDF)", type=["jpg","jpeg","png","pdf"])
+comprobante = st.file_uploader("📎 Sube el comprobante de pago (imagen o PDF)",
+                               type=["jpg","jpeg","png","pdf"])
 
 # =======================================
 # 🧮 VALIDACIONES Y REGISTRO
@@ -174,7 +228,7 @@ if st.button("✅ Registrar pago"):
         st.error("⚠️ Corrige los siguientes errores:\n- " + "\n- ".join(errores))
         st.stop()
 
-    # Validación de duplicados
+    # Validación de duplicados en CSV local
     registro_csv = APP_DIR / "registro_pagos.csv"
     if registro_csv.exists():
         df_reg = pd.read_csv(registro_csv, dtype=str).fillna("")
@@ -192,14 +246,14 @@ if st.button("✅ Registrar pago"):
     ext = Path(comprobante.name).suffix
     nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana_seleccionada}_{fecha_ts}{ext}"
 
-    # Guardado local (temporal en Cloud)
+    # Guardado local (respaldo)
     carpeta = APP_DIR / "pagos_registrados"
     carpeta.mkdir(exist_ok=True)
     ruta_archivo = carpeta / nombre_archivo
     with open(ruta_archivo, "wb") as f:
         f.write(comprobante.getbuffer())
 
-    # Construir registro
+    # Construir registro base (sin signos $ para que sea numérico en Sheets)
     detalle_portafolio = "PRODUCTO ÚNICO" if len(seleccionadas) == 1 else "MULTIPRODUCTO"
     fecha_registro = datetime.now().strftime("%d/%m/%Y")
     mes_aplicacion = fecha_pago.strftime("%B").upper()
@@ -211,8 +265,8 @@ if st.button("✅ Registrar pago"):
         "CAMPAÑA": campana_seleccionada,
         "REFERENCIA": referencia,
         "N° COMPROBANTE": str(nro_comprobante),
-        "VALOR PAGO TOTAL": f"${valor_pago:,.0f}",
-        "VALOR PAGO POR CAMPAÑA": f"${valor_pago:,.0f}",
+        "VALOR PAGO TOTAL": f"{valor_pago:.0f}",
+        "VALOR PAGO POR CAMPAÑA": f"{valor_pago:.0f}",
         "FECHA DE PAGO": fecha_pago.strftime("%Y-%m-%d"),
         "PUNTO DE PAGO": banco_sel,
         "RESPONSABLE": nombre_asesor,
@@ -227,15 +281,53 @@ if st.button("✅ Registrar pago"):
         "OBLIGACION": ", ".join(map(str, seleccionadas)),
         "ARCHIVO COMPROBANTE": nombre_archivo,
         "TIPO DE PAGO": tipo_pago,
+        "LINK COMPROBANTE DRIVE": "",
     }
 
+    # Guardar respaldo local en CSV
     df_nuevo = pd.DataFrame([registro])
     if registro_csv.exists():
         df_nuevo.to_csv(registro_csv, mode="a", header=False, index=False)
     else:
         df_nuevo.to_csv(registro_csv, index=False)
 
-    st.success(f"✅ Pago registrado correctamente para el cliente {cedula_cliente}.")
-    st.info(f"Archivo guardado como: {nombre_archivo}\n\n⚠️ En Streamlit Cloud el almacenamiento local es temporal. En la siguiente fase conectaremos Google Drive y Google Sheets para persistencia real.")
-    st.balloons()
+    # =======================================
+    # 📤 ENVÍO A GOOGLE DRIVE Y GOOGLE SHEETS
+    # =======================================
+    try:
+        drive_service, sheets_service = get_g_services()
 
+        # Subir archivo a Drive
+        file_metadata = {
+            "name": nombre_archivo,
+            "parents": [DRIVE_FOLDER_ID],
+        }
+        media = MediaFileUpload(str(ruta_archivo), resumable=True)
+        uploaded = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id"
+        ).execute()
+        file_id = uploaded.get("id")
+        drive_link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+
+        registro["LINK COMPROBANTE DRIVE"] = drive_link
+
+        # Fila en el mismo orden que el Sheet
+        fila = [[registro[col] for col in SHEET_COLUMNS]]
+
+        sheets_service.spreadsheets().values().append(
+            spreadsheetId=SHEET_ID,
+            range="A1",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": fila},
+        ).execute()
+
+        st.success(f"✅ Pago registrado y enviado a Google Sheets/Drive para el cliente {cedula_cliente}.")
+        st.info(f"📎 Ver comprobante en Drive: {drive_link}")
+
+    except Exception as e:
+        st.warning(f"⚠️ El pago se guardó localmente, pero hubo un problema con Google Drive/Sheets: {e}")
+
+    st.balloons()
