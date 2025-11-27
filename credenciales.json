@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "pagos-carteras-propias",
+  "private_key_id": "f783bb42583a943ce744394391e9ae1264800114",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFPWQ/2xhj/s7B\nwDTZh/FswhezIWaREteB0A0YXtLOZjf7drQXm7cbb91SQuXGc4rGvdalS4Wnfv8p\ntoFJvwVi+LJncySqIlHH/Xq8iWt4zoMsYpfnh9RRDrxXsj5ZeOLI75v3aXswkx4y\nK9v5ikwU/nqBuMpMl6Ad8yxm5tJi/MuUuIaedSolMReRdcdP02BgYFFylHMKxUhR\nZBJFoA3k20U/NprtUuP/i6G/dXni73HJhCk4EjJtOYNVh8nwQhLZvGIOrYQj6mDi\ni3B7LkYVcU/HH4qKAcg0ibZyypr09VMYqJpfN9nXrJl2I0+wEBz2jJo0N7Xnmsu6\nAvQC747rAgMBAAECggEAUoCEb2VgxWru5wJT2O3RIXHqYeZFtccQ197Dq372ZJlD\nL28Ok5VxuQtIo0ESRblMwibkIs39QPuRFcyeNc+uHCD01urF2lhyptmzPiupBaY0\nHhu7eIBLYgBs7a3EAL7c9bmsHohDnCTdi5Tm9XFQs7NiYOJ/1BvUQNLXrs88D2T7\nSjQkXMMoFJPDa4A4oC1TBI1GQ8gBG+zn/LSuPZuHJBlqK/b2lx/Yb9a10/hsdB5G\nitqZ03ezJB9Z5SKOVChycQNujo+o6nOAwIJ2BIEZpg2IyfPbr19iabHBlkiOUdHp\nuuewgy954J2cD51y1cSRkxg/aazlLROV5k8omzL5SQKBgQD7Ei/9eAT/l+msNxg5\nrJMxAcvbH9GgPJR5Zmg6GfTWJaZJ0uUF2WNKkcqdTnx4kviCDp/qBS4SJ9VKBiNk\nlOi6MZM/h2v9T6N41jOwlLuJSsykItQ2gEcbP2aXErHIvQxf19mbC2UO/C1phDZO\n3WN+YzP7ejf/5uA7zLgdHfXmpwKBgQDJHKnZx+OTFOoutJbfZMtdwW+dGMZh67D2\nksiRBE8Cq2nHvVSACYAn+gJyaoILrrnrxO3ljBkixCF/yMWDbg5vfrBhiUMBzwPy\nT66Ci7G5ojlTCEIfrvdjWYakSrNoRKCDvgH7f/BxJk3YTyYMeb0bt2eARiQRUPfx\n/i91l4PiHQKBgQDGr6ropE0YU4ipL2RtZ8OHucswWirS6n344HDE4fueaGcC7vEs\nws7PmTZFbHIWHQCqM5abZIQD/B/PF7J0i17s0gSb9rgf2yEbpC99owYR7O6rSaC0\njKk4x+CQ10t39xtO0Ys0Jj1QMYJiiS1NFegBgdIGRb8BNRzoVeaxrB8H6wKBgEBS\nk5ydCxOCz/fKOKsQkN7WvH0RbHnrKTlj7xQ6vY6MBpQk4P7miv++PcQcfqV/5+UZ\nokEV0wBEnLZDH7EOpT1R1tYLUcwlSwzYIWeNiHVoBk+hR4zcqDE1dBPd9I23zWL1\nharL27pE1wcFIZVB5pMT0N29EVIchID4nHNO15adAoGASEc7aXBuNAqGSQlqUG8z\nZK7JnNkyhqP5f9oKsrAyeYp3f9Pdwv9XzczcwDWTBgbSrZ7vk26eRrsPHYzrHKaY\nXvCfSOixKOeysCB5dLIkarYiJMniclWkCgV/SpYFaWIQZzZqYBhaixYOLz2n5/XI\nA0gZtSs+Md2jVX9dOZy9zBU=\n-----END PRIVATE KEY-----\n",
+  "client_email": "service-pagos-carteras@pagos-carteras-propias.iam.gserviceaccount.com",
+  "client_id": "103503217769485193096",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/service-pagos-carteras%40pagos-carteras-propias.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
