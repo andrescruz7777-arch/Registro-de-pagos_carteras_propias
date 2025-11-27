@@ -1,7 +1,7 @@
-# registros_pagos.py — versión estable SOLO Google Sheets
+# registros_pagos.py — versión estable SOLO Google Sheets, sin comprobante
 # - Muestra obligaciones completas con AgGrid
-# - Registra pagos
-# - Guarda comprobante localmente (en el servidor)
+# - Registra pagos (sin subir comprobante)
+# - Guarda respaldo local en CSV
 # - Registra fila en Google Sheets usando requests + access token
 
 import streamlit as st
@@ -60,7 +60,7 @@ SHEET_COLUMNS = [
     "OBLIGACION",
     "ARCHIVO COMPROBANTE",
     "TIPO DE PAGO",
-    "LINK COMPROBANTE DRIVE",  # lo dejamos por estructura, aunque irá vacío
+    "LINK COMPROBANTE DRIVE",
 ]
 
 @st.cache_resource
@@ -96,7 +96,6 @@ def append_row_to_sheet(registro: dict):
     }
 
     fila = [[registro[col] for col in SHEET_COLUMNS]]
-
     body = {"values": fila}
 
     resp = requests.post(url, headers=headers, json=body, timeout=10)
@@ -241,14 +240,6 @@ col_banco = next((c for c in df_bancos.columns if "BANCO" in c or "PUNTO" in c),
 banco_sel = st.selectbox("🏦 Banco o punto de pago:", sorted(df_bancos[col_banco].dropna().unique()))
 
 # =======================================
-# 📎 CARGA DE COMPROBANTE
-# =======================================
-comprobante = st.file_uploader(
-    "📎 Sube el comprobante de pago (imagen o PDF)",
-    type=["jpg", "jpeg", "png", "pdf"]
-)
-
-# =======================================
 # 🧮 VALIDACIONES Y REGISTRO
 # =======================================
 if st.button("✅ Registrar pago"):
@@ -261,8 +252,6 @@ if st.button("✅ Registrar pago"):
         errores.append("Número de comprobante es obligatorio.")
     if valor_pago <= 0:
         errores.append("El valor del pago debe ser mayor que 0.")
-    if not comprobante:
-        errores.append("Debes subir el comprobante.")
     if not banco_sel:
         errores.append("Selecciona un banco o punto de pago.")
 
@@ -282,18 +271,6 @@ if st.button("✅ Registrar pago"):
         if not existe.empty:
             st.warning("⚠️ Este pago ya fue registrado anteriormente (posible duplicado).")
             st.stop()
-
-    # Nombre archivo comprobante
-    fecha_ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    ext = Path(comprobante.name).suffix
-    nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana_seleccionada}_{fecha_ts}{ext}"
-
-    # Guardado local (respaldo temporal en el servidor)
-    carpeta = APP_DIR / "pagos_registrados"
-    carpeta.mkdir(exist_ok=True)
-    ruta_archivo = carpeta / nombre_archivo
-    with open(ruta_archivo, "wb") as f:
-        f.write(comprobante.getbuffer())
 
     # Construir registro base
     detalle_portafolio = "PRODUCTO ÚNICO" if len(seleccionadas) == 1 else "MULTIPRODUCTO"
@@ -321,7 +298,7 @@ if st.button("✅ Registrar pago"):
         "ITEM": "",
         "CONTACTO COLLECTIONS": "",
         "OBLIGACION": ", ".join(map(str, seleccionadas)),
-        "ARCHIVO COMPROBANTE": nombre_archivo,
+        "ARCHIVO COMPROBANTE": "",   # por ahora sin archivo
         "TIPO DE PAGO": tipo_pago,
         "LINK COMPROBANTE DRIVE": "",
     }
@@ -334,14 +311,13 @@ if st.button("✅ Registrar pago"):
         df_nuevo.to_csv(registro_csv, index=False)
 
     # =======================================
-    # 📤 ENVÍO A GOOGLE SHEETS (HTTP directo)
+    # 📤 ENVÍO A GOOGLE SHEETS
     # =======================================
     try:
         resp_json = append_row_to_sheet(registro)
         st.success(f"✅ Pago registrado en Google Sheets para el cliente {cedula_cliente}.")
-        st.info("📌 El comprobante se guardó solo como respaldo local en el servidor (no en Drive).")
-        # Debug opcional:
-        # st.write("🧪 Respuesta Sheets:", resp_json)
+        st.info("📌 Comprobante no almacenado (se deshabilitó la carga de archivos por ahora).")
+        # st.write("🧪 Respuesta Sheets:", resp_json)  # debug opcional
     except Exception as e:
         st.error(
             "❌ El pago se guardó en el CSV local, pero hubo un problema al escribir en Google Sheets.\n\n"
@@ -349,3 +325,4 @@ if st.button("✅ Registrar pago"):
         )
 
     st.balloons()
+
