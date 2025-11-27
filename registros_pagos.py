@@ -1,5 +1,9 @@
-# pagos_propias.py — versión estable con AgGrid + Google Drive + Google Sheets
-# Streamlit Cloud 2025 (Python 3.10)
+# registros_pagos.py — versión estable:
+# - Muestra obligaciones completas con AgGrid
+# - Registra pagos
+# - Sube comprobante a Google Drive
+# - Registra fila en Google Sheets
+# - Usa credenciales desde st.secrets (NO archivo JSON en el repo)
 
 import streamlit as st
 import pandas as pd
@@ -11,8 +15,11 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-st.set_page_config(page_title="Registro de Pagos - Carteras Propias Bogotá",
-                   layout="centered", page_icon="💰")
+st.set_page_config(
+    page_title="Registro de Pagos - Carteras Propias Bogotá",
+    layout="centered",
+    page_icon="💰",
+)
 st.title("💰 Bienvenido al registro de pagos de carteras propias Bogotá")
 
 # =======================================
@@ -22,7 +29,6 @@ APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
 PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
-CREDENTIALS_FILE = APP_DIR / "credenciales.json"   # <-- pon aquí tu JSON
 
 # =======================================
 # 🔐 GOOGLE DRIVE / SHEETS
@@ -63,8 +69,16 @@ SHEET_COLUMNS = [
 
 @st.cache_resource
 def get_g_services():
-    creds = service_account.Credentials.from_service_account_file(
-        str(CREDENTIALS_FILE), scopes=SCOPES
+    """
+    Carga las credenciales desde st.secrets["gcp_service_account"]
+    (configuradas en Streamlit Cloud) y construye los servicios de
+    Google Drive y Google Sheets.
+    """
+    # st.secrets["gcp_service_account"] debe contener el JSON de la cuenta de servicio
+    service_info = dict(st.secrets["gcp_service_account"])
+    creds = service_account.Credentials.from_service_account_info(
+        service_info,
+        scopes=SCOPES,
     )
     drive_service = build("drive", "v3", credentials=creds)
     sheets_service = build("sheets", "v4", credentials=creds)
@@ -156,14 +170,19 @@ if cedula_cliente:
         df_vista.reset_index(drop=True, inplace=True)
 
         st.subheader("Obligaciones encontradas")
-        st.caption("Ahora las obligaciones se muestran completas.")
+        st.caption("Las obligaciones se muestran completas.")
         gb = GridOptionsBuilder.from_dataframe(df_vista)
         gb.configure_pagination(enabled=True)
         gb.configure_default_column(editable=False, resizable=True, wrapText=True, autoHeight=True)
         grid_options = gb.build()
 
-        AgGrid(df_vista, gridOptions=grid_options, height=300,
-               theme="balham", fit_columns_on_grid_load=True)
+        AgGrid(
+            df_vista,
+            gridOptions=grid_options,
+            height=300,
+            theme="balham",
+            fit_columns_on_grid_load=True
+        )
 
         opciones_oblig = df_cliente[col_oblig].tolist()
         seleccionadas = st.multiselect(
@@ -203,8 +222,10 @@ banco_sel = st.selectbox("🏦 Banco o punto de pago:", sorted(df_bancos[col_ban
 # =======================================
 # 📎 CARGA DE COMPROBANTE
 # =======================================
-comprobante = st.file_uploader("📎 Sube el comprobante de pago (imagen o PDF)",
-                               type=["jpg","jpeg","png","pdf"])
+comprobante = st.file_uploader(
+    "📎 Sube el comprobante de pago (imagen o PDF)",
+    type=["jpg", "jpeg", "png", "pdf"]
+)
 
 # =======================================
 # 🧮 VALIDACIONES Y REGISTRO
@@ -246,14 +267,14 @@ if st.button("✅ Registrar pago"):
     ext = Path(comprobante.name).suffix
     nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana_seleccionada}_{fecha_ts}{ext}"
 
-    # Guardado local (respaldo)
+    # Guardado local (respaldo temporal)
     carpeta = APP_DIR / "pagos_registrados"
     carpeta.mkdir(exist_ok=True)
     ruta_archivo = carpeta / nombre_archivo
     with open(ruta_archivo, "wb") as f:
         f.write(comprobante.getbuffer())
 
-    # Construir registro base (sin signos $ para que sea numérico en Sheets)
+    # Construir registro base (sin signo $ para que quede numérico en Sheets)
     detalle_portafolio = "PRODUCTO ÚNICO" if len(seleccionadas) == 1 else "MULTIPRODUCTO"
     fecha_registro = datetime.now().strftime("%d/%m/%Y")
     mes_aplicacion = fecha_pago.strftime("%B").upper()
@@ -331,3 +352,4 @@ if st.button("✅ Registrar pago"):
         st.warning(f"⚠️ El pago se guardó localmente, pero hubo un problema con Google Drive/Sheets: {e}")
 
     st.balloons()
+
