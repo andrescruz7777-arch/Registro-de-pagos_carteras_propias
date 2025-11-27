@@ -1,9 +1,8 @@
 # registros_pagos.py — versión estable:
 # - Muestra obligaciones completas con AgGrid
 # - Registra pagos
-# - Sube comprobante a Google Drive
-# - Registra fila en Google Sheets
-# - Usa credenciales desde st.secrets (NO archivo JSON en el repo)
+# - Guarda comprobante localmente (en el servidor)
+# - Registra fila en Google Sheets (sin usar Drive)
 
 import streamlit as st
 import pandas as pd
@@ -13,7 +12,6 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
 st.set_page_config(
     page_title="Registro de Pagos - Carteras Propias Bogotá",
@@ -31,13 +29,11 @@ PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
 
 # =======================================
-# 🔐 GOOGLE DRIVE / SHEETS
+# 🔐 GOOGLE SHEETS (solo Sheets, sin Drive)
 # =======================================
-DRIVE_FOLDER_ID = "1RmswnRD65UzK4mw9xm7QzKKd9T4Mq7qA"
 SHEET_ID = "10gjxfIR3fG7uzJQvDL2lFCKX_drCqyaxm5Xf6XEseIY"
 
 SCOPES = [
-    "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
@@ -64,25 +60,22 @@ SHEET_COLUMNS = [
     "OBLIGACION",
     "ARCHIVO COMPROBANTE",
     "TIPO DE PAGO",
-    "LINK COMPROBANTE DRIVE",
+    "LINK COMPROBANTE DRIVE",  # quedará vacío por ahora
 ]
 
 @st.cache_resource
-def get_g_services():
+def get_sheets_service():
     """
     Carga las credenciales desde st.secrets["gcp_service_account"]
-    (configuradas en Streamlit Cloud) y construye los servicios de
-    Google Drive y Google Sheets.
+    y construye el servicio de Google Sheets.
     """
-    # st.secrets["gcp_service_account"] debe contener el JSON de la cuenta de servicio
     service_info = dict(st.secrets["gcp_service_account"])
     creds = service_account.Credentials.from_service_account_info(
         service_info,
         scopes=SCOPES,
     )
-    drive_service = build("drive", "v3", credentials=creds)
     sheets_service = build("sheets", "v4", credentials=creds)
-    return drive_service, sheets_service
+    return sheets_service
 
 # =======================================
 # ⚙️ FUNCIONES BASE
@@ -262,12 +255,12 @@ if st.button("✅ Registrar pago"):
             st.warning("⚠️ Este pago ya fue registrado anteriormente (posible duplicado).")
             st.stop()
 
-    # Nombre archivo comprobante
+    # Nombre archivo comprobante (solo como referencia & respaldo local)
     fecha_ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     ext = Path(comprobante.name).suffix
     nombre_archivo = f"{cedula_asesor}_Documento_{cedula_cliente}_{campana_seleccionada}_{fecha_ts}{ext}"
 
-    # Guardado local (respaldo temporal)
+    # Guardado local (respaldo temporal en el servidor de Streamlit)
     carpeta = APP_DIR / "pagos_registrados"
     carpeta.mkdir(exist_ok=True)
     ruta_archivo = carpeta / nombre_archivo
@@ -302,7 +295,7 @@ if st.button("✅ Registrar pago"):
         "OBLIGACION": ", ".join(map(str, seleccionadas)),
         "ARCHIVO COMPROBANTE": nombre_archivo,
         "TIPO DE PAGO": tipo_pago,
-        "LINK COMPROBANTE DRIVE": "",
+        "LINK COMPROBANTE DRIVE": "",  # por ahora vacío
     }
 
     # Guardar respaldo local en CSV
@@ -313,26 +306,10 @@ if st.button("✅ Registrar pago"):
         df_nuevo.to_csv(registro_csv, index=False)
 
     # =======================================
-    # 📤 ENVÍO A GOOGLE DRIVE Y GOOGLE SHEETS
+    # 📤 ENVÍO A GOOGLE SHEETS (sin Drive)
     # =======================================
     try:
-        drive_service, sheets_service = get_g_services()
-
-        # Subir archivo a Drive
-        file_metadata = {
-            "name": nombre_archivo,
-            "parents": [DRIVE_FOLDER_ID],
-        }
-        media = MediaFileUpload(str(ruta_archivo), resumable=True)
-        uploaded = drive_service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields="id"
-        ).execute()
-        file_id = uploaded.get("id")
-        drive_link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
-
-        registro["LINK COMPROBANTE DRIVE"] = drive_link
+        sheets_service = get_sheets_service()
 
         # Fila en el mismo orden que el Sheet
         fila = [[registro[col] for col in SHEET_COLUMNS]]
@@ -345,11 +322,13 @@ if st.button("✅ Registrar pago"):
             body={"values": fila},
         ).execute()
 
-        st.success(f"✅ Pago registrado y enviado a Google Sheets/Drive para el cliente {cedula_cliente}.")
-        st.info(f"📎 Ver comprobante en Drive: {drive_link}")
+        st.success(f"✅ Pago registrado en Google Sheets para el cliente {cedula_cliente}.")
+        st.info("📌 El comprobante se guardó solo como respaldo local en el servidor (no en Drive).")
 
     except Exception as e:
-        st.warning(f"⚠️ El pago se guardó localmente, pero hubo un problema con Google Drive/Sheets: {e}")
+        st.error(
+            "❌ El pago se guardó en el CSV local, pero hubo un problema al escribir en Google Sheets.\n\n"
+            f"Detalle técnico Sheets: {e}"
+        )
 
     st.balloons()
-
