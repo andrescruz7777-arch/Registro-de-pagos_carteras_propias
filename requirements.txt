@@ -1,8 +1,7 @@
-sstreamlit
+streamlit
 pandas
 openpyxl
 pyarrow
 streamlit-aggrid
 google-auth
 requests
-google-auth-httplib2
