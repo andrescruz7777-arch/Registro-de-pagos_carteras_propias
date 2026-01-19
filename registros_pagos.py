@@ -3,6 +3,7 @@
 # - Registra pagos (sin subir comprobante)
 # - Guarda respaldo local en CSV
 # - Registra fila en Google Sheets usando requests + access token
+# + NUEVO (único cambio): Medio de pago desde Medios_de_pago.xlsx -> se guarda en OBSERVACIONES
 
 import streamlit as st
 import pandas as pd
@@ -28,6 +29,7 @@ APP_DIR = Path(__file__).parent.resolve()
 PATH_HC = APP_DIR / "HC_Carteras_propias.xlsx"
 PATH_CONSOL = APP_DIR / "Consolidado_obligaciones _carteras_propias.xlsx"
 PATH_BANCOS = APP_DIR / "Bancos_carteras_propias.xlsx"
+PATH_MEDIOS = APP_DIR / "Medios_de_pago.xlsx"  # ✅ NUEVO
 
 # =======================================
 # 🔐 GOOGLE SHEETS
@@ -52,7 +54,7 @@ SHEET_COLUMNS = [
     "DETALLE PORTAFOLIO",
     "MES DE APLICACIÓN PAGO",
     "AÑO DE APLICACIÓN PAGO",
-    "OBSERVACIONES",
+    "OBSERVACIONES",  # ✅ aquí queda el medio de pago
     "CONCILIACIÓN",
     "OBSERVACIÓN",
     "ITEM",
@@ -126,6 +128,7 @@ try:
     df_hc = normaliza(leer_excel_local(PATH_HC))
     df_consol = normaliza(leer_excel_local(PATH_CONSOL))
     df_bancos = normaliza(leer_excel_local(PATH_BANCOS))
+    df_medios = normaliza(leer_excel_local(PATH_MEDIOS))  # ✅ NUEVO
 except Exception as e:
     st.error(f"❌ Error al cargar las bases locales: {e}")
     st.stop()
@@ -137,8 +140,18 @@ col_cc_deudor = next((c for c in df_consol.columns if "DEUDOR" in c or c in ["CE
 col_oblig = next((c for c in df_consol.columns if "OBLIG" in c), None)
 col_campana = next((c for c in df_consol.columns if "CAMPA" in c or "CARTERA" in c), None)
 
-if not all([col_doc_asesor, col_nom_asesor, col_cc_deudor, col_oblig, col_campana]):
-    st.error("❌ Verifica que las bases tengan: DOCUMENTO/NOMBRE (HC) y CEDULA_DEUDOR/OBLIGACION/CAMPAÑA (Consolidado).")
+# ✅ NUEVO: detectar columna de medios (si no encuentra "MEDIO", usa la primera)
+col_medio_pago = next((c for c in df_medios.columns if "MEDIO" in c), None)
+if col_medio_pago is None:
+    col_medio_pago = df_medios.columns[0] if len(df_medios.columns) > 0 else None
+
+if not all([col_doc_asesor, col_nom_asesor, col_cc_deudor, col_oblig, col_campana, col_medio_pago]):
+    st.error(
+        "❌ Verifica que las bases tengan:\n"
+        "- HC: DOCUMENTO/NOMBRE\n"
+        "- Consolidado: CEDULA_DEUDOR/OBLIGACION/CAMPAÑA\n"
+        "- Medios_de_pago: una columna con el listado (idealmente 'MEDIO DE PAGO')"
+    )
     st.stop()
 
 # =======================================
@@ -240,6 +253,24 @@ col_banco = next((c for c in df_bancos.columns if "BANCO" in c or "PUNTO" in c),
 banco_sel = st.selectbox("🏦 Banco o punto de pago:", sorted(df_bancos[col_banco].dropna().unique()))
 
 # =======================================
+# ✅ NUEVO: MEDIO DE PAGO (se guarda en OBSERVACIONES)
+# =======================================
+st.markdown("---")
+st.subheader("Medio de pago")
+
+lista_medios = (
+    df_medios[col_medio_pago]
+    .astype(str)
+    .str.strip()
+    .replace("", pd.NA)
+    .dropna()
+    .unique()
+    .tolist()
+)
+lista_medios = sorted(lista_medios)
+medio_pago_sel = st.selectbox("💳 Selecciona el medio de pago:", lista_medios)
+
+# =======================================
 # 🧮 VALIDACIONES Y REGISTRO
 # =======================================
 if st.button("✅ Registrar pago"):
@@ -254,6 +285,8 @@ if st.button("✅ Registrar pago"):
         errores.append("El valor del pago debe ser mayor que 0.")
     if not banco_sel:
         errores.append("Selecciona un banco o punto de pago.")
+    if not medio_pago_sel:
+        errores.append("Selecciona el medio de pago.")
 
     if errores:
         st.error("⚠️ Corrige los siguientes errores:\n- " + "\n- ".join(errores))
@@ -292,7 +325,7 @@ if st.button("✅ Registrar pago"):
         "DETALLE PORTAFOLIO": detalle_portafolio,
         "MES DE APLICACIÓN PAGO": mes_aplicacion,
         "AÑO DE APLICACIÓN PAGO": anio_aplicacion,
-        "OBSERVACIONES": "",
+        "OBSERVACIONES": medio_pago_sel,  # ✅ único cambio en el registro
         "CONCILIACIÓN": "",
         "OBSERVACIÓN": "",
         "ITEM": "",
@@ -316,7 +349,7 @@ if st.button("✅ Registrar pago"):
     try:
         resp_json = append_row_to_sheet(registro)
         st.success(f"✅ Pago registrado en Google Sheets para el cliente {cedula_cliente}.")
-        st.info("📌 Comprobante no almacenado (se deshabilitó la carga de archivos por ahora).")
+        st.info("📌 Medio de pago guardado en OBSERVACIONES.")
         # st.write("🧪 Respuesta Sheets:", resp_json)  # debug opcional
     except Exception as e:
         st.error(
@@ -325,4 +358,3 @@ if st.button("✅ Registrar pago"):
         )
 
     st.balloons()
-
