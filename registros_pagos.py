@@ -245,7 +245,7 @@ st.subheader("Datos del pago")
 referencia = st.text_input("📌 Referencia (número de factura o convenio):")
 nro_comprobante = st.text_input("🧾 Número de comprobante o transacción:")
 tipo_pago = st.selectbox("💠 Tipo de pago:", ["Pago total", "Pago a cuotas", "Abono", "Novación"])
-valor_pago = st.number_input("💰 Valor total del pago:", min_value=0.0, step=1000.0, format="%.0f")
+valor_pago = st.number_input("💰 Valor total del pago:", min_value=0.0, step=1000.0, format="%,.2f")
 fecha_pago = st.date_input("📅 Fecha de pago:", max_value=date.today(), value=date.today())
 
 # Banco / Punto de pago
